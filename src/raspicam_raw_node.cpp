@@ -211,7 +211,7 @@ static void get_status(RASPIVID_STATE *state)
      if(str == "LUMA" || str == "BGR8"){
        mmal_format = str;
      }else{
-       mmal_format = "BGR8"
+       mmal_format = "BGR8";
      }
    }
 
@@ -280,7 +280,7 @@ static void camera_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buff
     }else if (mmal_format == "LUMA"){
       msg.encoding = "mono8";
       msg.step = pData->pstate->width;
-      msg.data.insert( msg.data.end(), pData->pstate->width * pData->pstate->height, &(pData->buffer[pData->frame & 1][pData->id]) )
+      msg.data.insert( msg.data.end(), pData->pstate->width * pData->pstate->height, &(pData->buffer[pData->frame & 1][pData->id]) );
     }
     image_pub.publish(msg);
 		c_info.header.seq = pData->frame;
