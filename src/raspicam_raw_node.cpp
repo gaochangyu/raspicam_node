@@ -128,6 +128,7 @@ ros::Publisher image_pub;
 ros::Publisher camera_info_pub;
 sensor_msgs::CameraInfo c_info;
 std::string tf_prefix;
+std::string mmal_format;
 
 /** Struct used to pass information in encoder port userdata to callback
  */
@@ -206,6 +207,14 @@ static void get_status(RASPIVID_STATE *state)
 	ros::param::set("~tf_prefix", "");
    }
 
+   if (ros::param::get("~format",str)){
+     if(str == "LUMA" || str == "BGR8"){
+       mmal_format = str;
+     }else{
+       mmal_format = "BGR8"
+     }
+   }
+
    state->isInit = 0;
 
    // Setup preview window defaults
@@ -263,11 +272,17 @@ static void camera_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buff
 		msg.header.stamp = ros::Time::now();
 		msg.height = pData->pstate->height;
 		msg.width = pData->pstate->width;
-		msg.encoding = "bgra8";
-		msg.is_bigendian = 0;
-		msg.step = pData->pstate->width*4;
-		msg.data.insert( msg.data.end(), pData->buffer[pData->frame & 1], &(pData->buffer[pData->frame & 1][pData->id]) );
-		image_pub.publish(msg);
+    msg.is_bigendian = 0;
+		if (mmal_format == "BGR8"){
+      msg.encoding = "bgra8";
+		  msg.step = pData->pstate->width * 4;
+		  msg.data.insert( msg.data.end(), pData->buffer[pData->frame & 1], &(pData->buffer[pData->frame & 1][pData->id]) );
+    }else if (mmal_format == "LUMA"){
+      msg.encoding = "mono8";
+      msg.step = pData->pstate->width;
+      msg.data.insert( msg.data.end(), state->width * state->height, &(pData->buffer[pData->frame & 1][pData->id]) )
+    }
+    image_pub.publish(msg);
 		c_info.header.seq = pData->frame;
 		c_info.header.stamp = msg.header.stamp;
 		c_info.header.frame_id = msg.header.frame_id;
@@ -353,7 +368,7 @@ static MMAL_COMPONENT_T *create_camera_component(RASPIVID_STATE *state)
       cam_config.stills_capture_circular_buffer_height = 0;
       cam_config.fast_preview_resume = 0;
       cam_config.use_stc_timestamp = MMAL_PARAM_TIMESTAMP_MODE_RESET_STC;
-
+      
       mmal_port_parameter_set(camera->control, &cam_config.hdr);
    }
 
@@ -365,8 +380,16 @@ static MMAL_COMPONENT_T *create_camera_component(RASPIVID_STATE *state)
    //format->encoding_variant = MMAL_ENCODING_I420;
 
    //format->encoding = MMAL_ENCODING_I420;
-   format->encoding = MMAL_ENCODING_BGRA;
-   format->encoding_variant = MMAL_ENCODING_BGRA;
+   if(mmal_format == "BGR8"){
+    format->encoding = MMAL_ENCODING_BGRA;
+    format->encoding_variant = MMAL_ENCODING_BGRA;
+   }else if(mmal_format == "LUMA"){
+    format->encoding_variant = MMAL_ENCODING_I420;
+    format->encoding = MMAL_ENCODING_I420;
+   }else{
+    format->encoding = MMAL_ENCODING_BGRA;
+    format->encoding_variant = MMAL_ENCODING_BGRA;
+   }
 
    format->es->video.width = state->width;
    format->es->video.height = state->height;
