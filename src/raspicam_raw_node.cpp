@@ -129,6 +129,7 @@ ros::Publisher camera_info_pub;
 sensor_msgs::CameraInfo c_info;
 std::string tf_prefix;
 std::string mmal_format;
+uint8_t binary_threshold;
 
 /** Struct used to pass information in encoder port userdata to callback
  */
@@ -208,10 +209,20 @@ static void get_status(RASPIVID_STATE *state)
    }
 
    if (ros::param::get("~format",str)){
-     if(str == "LUMA" || str == "BGRA8"){
+     if(str == "BINARY" || str == "LUMA" || str == "BGRA8"){
        mmal_format = str;
      }else{
        mmal_format = "BGRA8";
+       ros::param::set("format", "BGRA8");
+     }
+   }
+
+   if (ros::param::get("~binary_threshold",temp)){
+     if (temp > 0 && temp < 256){
+       binary_threshold = (uint8_t)temp;
+     }else{
+       binary_threshold = 128;
+       ros::param::set("~binary_threshold", 128);
      }
    }
 
@@ -281,6 +292,19 @@ static void camera_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buff
       msg.encoding = "mono8";
       msg.step = pData->pstate->width;
       msg.data.insert( msg.data.end(), pData->buffer[pData->frame & 1], pData->buffer[pData->frame & 1] + pData->pstate->width * pData->pstate->height );
+    }else if (mmal_format == "BINARY"){
+      msg.encoding = "mono8";
+      msg.step = pData->pstate->width;
+      uint32_t pixel_num = pData->pstate->width * pData->pstate->height;
+      uint8_t *iter;
+      for(iter = pData->buffer[pData->frame & 1];iter < pData->buffer[pData->frame & 1] + pixel_num; ++iter){
+        if(*iter > binary_threshold){
+          *iter = 255;
+        }else{
+          *iter = 0;
+        }
+      }
+      msg.data.insert( msg.data.end(), pData->buffer[pData->frame & 1], pData->buffer[pData->frame & 1] + pixel_num );
     }
     image_pub.publish(msg);
 		c_info.header.seq = pData->frame;
@@ -383,7 +407,7 @@ static MMAL_COMPONENT_T *create_camera_component(RASPIVID_STATE *state)
    if(mmal_format == "BGRA8"){
     format->encoding = MMAL_ENCODING_BGRA;
     format->encoding_variant = MMAL_ENCODING_BGRA;
-   }else if(mmal_format == "LUMA"){
+   }else if(mmal_format == "LUMA" || mmal_format == "BINARY"){
     format->encoding_variant = MMAL_ENCODING_I420;
     format->encoding = MMAL_ENCODING_I420;
    }else{
